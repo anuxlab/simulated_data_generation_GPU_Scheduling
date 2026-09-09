@@ -97,6 +97,35 @@ class WorkloadScenarioGenerator:
         kept = kept[:n]
         return kept - kept[0]
 
+    # ---- extra primitives for AI/LLM-era scenarios -----------------------------
+    def zipf_weights(self, n_categories: int, skew: float = 1.2) -> np.ndarray:
+        """Power-law popularity weights over n_categories items (e.g. MoE experts,
+        hot users/tenants). skew=0 -> uniform; higher skew -> more concentrated on
+        a few categories. Used for expert/tenant load-skew scenarios."""
+        ranks = np.arange(1, n_categories + 1)
+        w = 1.0 / np.power(ranks, skew)
+        return w / w.sum()
+
+    def time_trend_scale(self, submit_time: np.ndarray, start_mult: float = 1.0,
+                          end_mult: float = 3.0) -> np.ndarray:
+        """Linear multiplier that grows from start_mult to end_mult across the span
+        of `submit_time` -- used to represent a slow adoption trend over the trace
+        window (e.g. context lengths creeping up) rather than a step change."""
+        t = np.asarray(submit_time, dtype=float)
+        span = t.max() - t.min()
+        if span <= 0:
+            return np.full_like(t, start_mult)
+        frac = (t - t.min()) / span
+        return start_mult + frac * (end_mult - start_mult)
+
+    def periodic_times(self, period_s: float, n: int, jitter_frac: float = 0.1,
+                        start: float = 0.0) -> np.ndarray:
+        """n evenly-spaced event times `period_s` apart, each with small jitter --
+        used for synchronized recurring events like distributed-training checkpoints."""
+        base = start + np.arange(n) * period_s
+        jitter = self.rng.normal(0, period_s * jitter_frac, size=n)
+        return np.clip(base + jitter, 0, None)
+
     # ---- assemble a trace DataFrame in the unified schema ----------------------
     def assemble(self, submit_time, duration, num_cpu, num_gpu, gpu_type,
                  scenario: str, users: int = 500) -> pd.DataFrame:

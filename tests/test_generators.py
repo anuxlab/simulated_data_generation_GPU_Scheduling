@@ -15,6 +15,8 @@ def fit_results(normalized_df):
 EXPECTED_SCENARIOS = {
     "baseline", "bursty_arrivals", "heavy_tail_demand", "diurnal_pattern",
     "high_contention", "flash_crowd", "resource_starvation", "cold_start_storm",
+    "llm_inference_bursty", "long_context_kv_pressure", "spot_preemption_churn",
+    "checkpoint_io_burst", "gpu_fragmentation_sharing", "moe_expert_load_skew",
 }
 
 
