@@ -1,3 +1,9 @@
-from . import future_ai_scenarios  # noqa: F401  (registers the 6 AI-era scenarios)
-from .scenario_generator import WorkloadScenarioGenerator  # noqa: F401
-from .stress_scenarios import list_scenarios, register_scenario, run_scenario  # noqa: F401
+from .engine import WorkloadScenarioGenerator, get_scenario, list_scenarios, register_scenario
+from . import stress_scenarios  # noqa: F401  (registers all built-in scenarios)
+
+__all__ = [
+    "WorkloadScenarioGenerator",
+    "get_scenario",
+    "list_scenarios",
+    "register_scenario",
+]

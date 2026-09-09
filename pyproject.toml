@@ -1,42 +1,23 @@
-[build-system]
-requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "gputrace"
-version = "0.1.0"
-description = "Source-agnostic statistical analysis and synthetic stress-test trace generation for GPU/datacenter cluster scheduling research."
-readme = "README.md"
+version = "1.0.0"
+description = "Synthetic GPU-cluster workload trace generation for scheduler/simulator benchmarking"
 requires-python = ">=3.10"
-license = { text = "Apache-2.0" }
-authors = [{ name = "gputrace contributors" }]
 dependencies = [
-    "pandas>=2.0",
-    "numpy>=1.24",
-    "scipy>=1.10",
+    "pandas>=1.5",
+    "numpy>=1.23",
+    "scipy>=1.9",
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=7.4",
-    "pytest-cov>=4.1",
-    "ruff>=0.4",
-]
+dev = ["pytest>=7.0"]
 
 [project.scripts]
 gputrace = "gputrace.cli:main"
 
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts = "-q"
-
-[tool.ruff]
-line-length = 110
-target-version = "py310"
-
-[tool.ruff.lint]
-select = ["E", "F", "I"]
-ignore = ["E501"]

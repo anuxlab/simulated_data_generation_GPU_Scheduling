@@ -1,66 +1,77 @@
 """
-Loader for Alibaba's cluster-trace-gpu-v2020 (github.com/alibaba/clusterdata).
+Loader for the Alibaba cluster-trace-gpu-v2020 release
+(https://github.com/alibaba/clusterdata).
 
-Handles two input shapes, auto-detected by column presence:
-1. The official simulator sample (`pai_job_duration_estimate_100K.csv` or
-   `pai_job_no_estimate_100K.csv`) -- job-level rows, already close to our schema.
-2. The full multi-table release's `pai_task_table.csv` (job_name, task_name, inst_num,
-   status, start_time, end_time, plan_cpu, plan_mem, plan_gpu, gpu_type) -- task-level
-   rows that get aggregated to job level (sum over tasks belonging to the same job_name).
+Accepts either:
+  * the official 100K-job simulator sample (``pai_task_table_sample.csv``),
+    or
+  * the full ``pai_task_table`` release
 
-plan_cpu/plan_gpu in the full release are in percent-of-one-unit (e.g. 100 = 1 core);
-we convert to units to match the sample format.
+Both ship with the same column layout; we key off column presence rather
+than filename so either works transparently.
+
+Expected raw columns (subset actually used):
+    job_name, task_name, inst_num, status, start_time, end_time,
+    plan_cpu, plan_mem, plan_gpu, gpu_type, user
 """
+
 from __future__ import annotations
 
+from pathlib import Path
+
+import numpy as np
 import pandas as pd
 
 from .base import BaseLoader, register
 
+_STATUS_MAP = {
+    "Terminated": "completed",
+    "Failed": "failed",
+    "Killed": "killed",
+    "Running": "completed",  # snapshot traces may catch jobs mid-flight
+    "Waiting": "killed",     # never actually ran within the trace window
+}
+
 
 @register("alibaba2020")
 class Alibaba2020Loader(BaseLoader):
-    name = "alibaba2020"
-
-    def _load_raw(self, path: str) -> pd.DataFrame:
+    def _load_raw(self, path: Path, **kwargs) -> pd.DataFrame:
         return pd.read_csv(path)
 
     def _normalize(self, raw: pd.DataFrame) -> pd.DataFrame:
-        cols = set(raw.columns)
+        df = raw.copy()
 
-        if {"job_id", "submit_time", "duration", "num_cpu", "num_gpu"}.issubset(cols):
-            # already job-level (the simulator sample format)
-            df = raw.copy()
-            df["job_id"] = df["job_id"].astype(str)
-            if "wait_time" not in df.columns:
-                df["wait_time"] = float("nan")
-            if "gpu_type" not in df.columns:
-                df["gpu_type"] = "UNKNOWN"
-            return df
+        # The public release uses plan_gpu as a PERCENTAGE of one device
+        # (0-100, sometimes >100 for multi-GPU tasks packed into inst_num).
+        # Convert to device count.
+        plan_gpu = pd.to_numeric(df.get("plan_gpu", 0), errors="coerce").fillna(0)
+        num_gpu = (plan_gpu / 100.0).clip(lower=0)
 
-        if {"job_name", "task_name", "start_time", "end_time", "plan_cpu", "plan_gpu"}.issubset(cols):
-            # full-release task table -> aggregate to job level
-            raw = raw.dropna(subset=["start_time", "end_time"]).copy()
-            raw["duration"] = raw["end_time"] - raw["start_time"]
-            raw = raw[raw["duration"] > 0]
-            agg = raw.groupby("job_name").agg(
-                submit_time=("start_time", "min"),
-                end_time=("end_time", "max"),
-                num_cpu=("plan_cpu", "sum"),
-                num_gpu=("plan_gpu", "sum"),
-                gpu_type=("gpu_type", lambda s: s.dropna().mode().iat[0] if s.dropna().size else "UNKNOWN"),
-                status=("status", lambda s: s.mode().iat[0] if s.size else "UNKNOWN"),
-            ).reset_index()
-            agg["duration"] = agg["end_time"] - agg["submit_time"]
-            agg["num_cpu"] = agg["num_cpu"] / 100.0   # plan_cpu is in % of a core
-            agg["num_gpu"] = agg["num_gpu"] / 100.0   # plan_gpu is in % of a GPU
-            agg = agg.rename(columns={"job_name": "job_id"})
-            agg["job_id"] = agg["job_id"].astype(str)
-            agg["wait_time"] = float("nan")
-            return agg[["job_id", "submit_time", "duration", "num_cpu", "num_gpu",
-                        "gpu_type", "status", "wait_time"]]
+        inst_num = pd.to_numeric(df.get("inst_num", 1), errors="coerce").fillna(1).clip(lower=1)
 
-        raise ValueError(
-            f"unrecognized alibaba2020 file shape, columns={sorted(cols)}. "
-            "expected either the simulator job-sample columns or pai_task_table columns."
+        start = pd.to_numeric(df["start_time"], errors="coerce")
+        end = pd.to_numeric(df["end_time"], errors="coerce")
+        duration = (end - start).clip(lower=0)
+
+        t0 = start.min()
+        submit_time = (start - t0).fillna(0)
+
+        status = df.get("status", "Terminated").map(_STATUS_MAP).fillna("completed")
+
+        out = pd.DataFrame(
+            {
+                "job_id": df["job_name"].astype(str) + "_" + df["task_name"].astype(str),
+                "submit_time": submit_time,
+                "duration": duration.fillna(0),
+                "num_cpu": pd.to_numeric(df.get("plan_cpu", 0), errors="coerce").fillna(0) / 100.0 * inst_num,
+                "num_gpu": num_gpu * inst_num,
+                "user": df.get("user", "unknown").astype(str),
+                "gpu_type": df.get("gpu_type", "").fillna("").astype(str),
+                "mem": pd.to_numeric(df.get("plan_mem", 0), errors="coerce").fillna(0) / 100.0 * inst_num,
+                "wait_time": np.zeros(len(df)),  # not directly reported; 0 baseline
+                "status": status,
+            }
         )
+        out = out.dropna(subset=["submit_time", "duration"]).reset_index(drop=True)
+        out["job_id"] = out["job_id"] + "_" + out.index.astype(str)  # guarantee uniqueness
+        return out
