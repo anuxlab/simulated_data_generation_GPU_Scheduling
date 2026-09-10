@@ -102,7 +102,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("list-scenarios", help="list registered stress-test scenarios").set_defaults(func=_cmd_list_scenarios)
 
     pa = sub.add_parser("analyze", help="fit distributions to a real source trace")
-    pa.add_argument("--loader", required=True, choices=list_loaders() + ["synthetic"])
+    pa.add_argument("--loader", required=True, choices=list_loaders())
     pa.add_argument("--input", required=True)
     pa.add_argument("--out", required=True, help="path to write the fit as JSON")
     pa.add_argument("--segment-by", default="gpu_type")

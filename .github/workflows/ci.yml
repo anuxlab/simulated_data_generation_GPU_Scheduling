@@ -51,11 +51,24 @@ jobs:
           python-version: "3.12"
       - name: Install package
         run: pip install -e .
-      - name: End-to-end smoke test on bundled fixture
+      - name: End-to-end smoke test (reference fit -> generate-all -> analyze -> export)
         run: |
           gputrace list-loaders
           gputrace list-scenarios
-          gputrace analyze tests/fixtures/alibaba_sample.csv --out fit_results.json
-          gputrace generate-all fit_results.json --n-jobs 500 --out-dir synthetic_traces
+
+          # generate-all with no --fit uses the built-in reference fit, so this
+          # step needs no external trace file at all (see generators/_reference.py)
+          gputrace generate-all --n-jobs 500 --out-dir synthetic_traces
           test -f synthetic_traces/baseline.csv
           test -f synthetic_traces/flash_crowd.csv
+
+          # exercise the analyze path too, via the synthetic loader against a
+          # trace this same run just generated (self-contained, no fixture needed)
+          gputrace analyze --loader synthetic --input synthetic_traces/baseline.csv --out fit.json
+          gputrace generate --scenario bursty_arrivals --fit fit.json --n-jobs 500 --out refit_trace.csv
+          test -f refit_trace.csv
+
+          # exercise the k8s_sim exporter
+          gputrace export --input synthetic_traces/high_contention.csv --format k8s_sim --out-dir k8s_sim_input
+          test -f k8s_sim_input/pods.csv
+          test -f k8s_sim_input/nodes.csv

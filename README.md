@@ -177,6 +177,31 @@ package's README for the other half of this bridge, including why a
 snapshot scheduler needs a time-driven wrapper to actually exercise the
 scenarios that are about *arrival dynamics* rather than just size mix.
 
+### Full integration walkthrough (both repos, copy-pasteable)
+
+Exactly what CI's `gputrace-integration` job in `py_sim` runs:
+
+```bash
+git clone https://github.com/anuxlab/simulated_data_generation_GPU_Scheduling.git gputrace
+git clone https://github.com/anuxlab/py_sim.git
+cd py_sim && pip install -e ".[gputrace]" && pip install -e ../gputrace
+
+gputrace generate-all --n-jobs 20000 --out-dir /tmp/gt_traces   # reference fit; add --fit fit.json for a real trace
+mkdir -p traces
+for f in /tmp/gt_traces/*.csv; do
+  name=$(basename "$f" .csv)
+  gputrace export --input "$f" --format k8s_sim --out-dir "traces/$name" --n-nodes 20 --gpus-per-node 8
+done
+
+python -m k8s_sim.experiment --traces-dir traces \
+    --policies fgd,best_fit,random --seeds 1,2,3 --mode time-driven --out results.csv
+```
+
+See `py_sim/README.md`'s "Using this together with gputrace" section for
+the full walkthrough including a real-trace `--fit`, and its "Recent CI
+fixes" section if you're wondering why some of `py_sim`'s files changed
+recently.
+
 ## Analysis output (`fit.json`)
 
 `gputrace analyze` writes an `AnalysisResult`: per-field distribution
@@ -194,6 +219,20 @@ pytest tests/ -v
 31 tests covering schema validation, every scenario's schema conformance,
 seed-reproducibility, the Hawkes-vs-Poisson clustering sanity check, the
 infinite-mean cap, and the k8s_sim exporter.
+
+## Recent CI fixes
+
+CI was failing for purely mechanical reasons, now fixed: `pyproject.toml`'s
+dev extras were missing `ruff` and `pytest-cov` (both the lint and test
+jobs invoke them directly), there was no `[tool.ruff]` config so ruff's
+full default ruleset flagged 47 mostly-stylistic issues instead of the
+handful of real ones, and the `smoke-cli` job called a CLI invocation
+(`gputrace analyze tests/fixtures/alibaba_sample.csv --out ...`, positional
+path, no `--loader`) that matched neither the current CLI's required
+`--loader`/`--input` flags nor an actually-present fixture file (there
+never was one committed). `smoke-cli` now uses the built-in reference fit
+end to end (`generate-all` with no `--fit`, then `analyze --loader
+synthetic` against that same output) so it needs no external file at all.
 
 ## Roadmap
 

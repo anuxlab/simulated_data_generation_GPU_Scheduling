@@ -28,8 +28,8 @@ import pandas as pd
 
 from . import schema
 from .analysis import AnalysisResult, analyze
-from .loaders import get_loader, list_loaders
 from .generators import WorkloadScenarioGenerator, get_scenario, list_scenarios
+from .loaders import get_loader, list_loaders
 
 __version__ = "1.0.0"
 

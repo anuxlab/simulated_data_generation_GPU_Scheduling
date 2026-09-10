@@ -19,7 +19,6 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
-from ..analysis import AnalysisResult
 from .engine import WorkloadScenarioGenerator, register_scenario
 
 _GPU_TYPES = ["A100", "V100", "T4", "H100"]
